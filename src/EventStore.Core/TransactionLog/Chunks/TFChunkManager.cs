@@ -255,13 +255,32 @@ public class TFChunkManager : IThreadPoolWorkItem {
 			TriggerBackgroundCaching();
 	}
 
-	// Switches the specified chunk in.
-	// Switches other chunks out as appropriate.
-	// The specified chunk is at a temp path, part of switching it in involves renaming it to the appropriate version.
-	public async ValueTask<TFChunk.TFChunk> SwitchChunk(TFChunk.TFChunk chunk, bool verifyHash,
+	// Converts the specified temp chunk to permanent, and switches it in.
+	public async ValueTask<TFChunk.TFChunk> SwitchTempChunk(TFChunk.TFChunk chunk, bool verifyHash,
 		bool removeChunksWithGreaterNumbers,
 		CancellationToken token) {
 		Ensure.NotNull(chunk, "chunk");
+
+		var chunkHeader = chunk.ChunkHeader;
+
+		// convert to new, permanent chunk
+		var newChunk = await MakeTempChunkPermanent(chunk, verifyHash, token);
+
+		// switch the new chunk into the chunks array.
+		int? removeChunksAfter = removeChunksWithGreaterNumbers
+			? chunkHeader.ChunkEndNumber // only true during replication
+			: null;
+		return await SwitchPermanentChunk(newChunk, removeChunksAfter, token);
+	}
+
+	// The specified chunk is temporary, but complete. It needs closing and renaming.
+	private async ValueTask<TFChunk.TFChunk> MakeTempChunkPermanent(
+		TFChunk.TFChunk chunk,
+		bool verifyHash,
+		CancellationToken token) {
+
+		Ensure.NotNull(chunk, "chunk");
+
 		if (!chunk.IsReadOnly)
 			throw new ArgumentException(string.Format("Passed TFChunk is not completed: {0}.", chunk.ChunkLocator));
 
@@ -301,20 +320,32 @@ public class TFChunkManager : IThreadPoolWorkItem {
 				_config.ReduceFileCachePressure, token: token);
 		}
 
-		// update the chunks array
+		return newChunk;
+	}
+
+	// switch a permanent chunk into the chunks array
+	private async ValueTask<TFChunk.TFChunk> SwitchPermanentChunk(
+		TFChunk.TFChunk newChunk,
+		int? removeChunksAfter,
+		CancellationToken token) {
+
+		Ensure.NotNull(newChunk, "chunk");
+
 		bool triggerCaching;
 		await _chunksLocker.AcquireAsync(token);
 		try {
-			if (!ReplaceChunksWith(newChunk, "Old")) {
+			if (ReplaceChunksWith(newChunk, "Old")) {
+				OnChunkSwitched?.Invoke(newChunk.ChunkInfo);
+			} else {
 				Log.Information("Chunk {chunk} will be not switched, marking for remove...", newChunk);
 				newChunk.MarkForDeletion();
-			} else
-				OnChunkSwitched?.Invoke(newChunk.ChunkInfo);
+			}
 
-			if (removeChunksWithGreaterNumbers) {
+			// only true during replication
+			if (removeChunksAfter.HasValue) {
 				var oldChunksCount = _chunksCount;
 				_chunksCount = newChunk.ChunkHeader.ChunkEndNumber + 1;
-				RemoveChunks(chunkHeader.ChunkEndNumber + 1, oldChunksCount - 1, "Excessive");
+				RemoveChunks(removeChunksAfter.Value + 1, oldChunksCount - 1, "Excessive");
 				if (_chunks[_chunksCount] is not null)
 					throw new Exception(string.Format("Excessive chunk #{0} found after raw replication switch.",
 						_chunksCount));

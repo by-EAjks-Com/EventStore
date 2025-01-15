@@ -43,7 +43,7 @@ public class ChunkManagerForExecutor<TStreamId> : IChunkManagerForChunkExecutor<
 		TFChunk chunk,
 		CancellationToken token) {
 
-		var tfChunk = await _manager.SwitchChunk(
+		var tfChunk = await _manager.SwitchTempChunk(
 			chunk: chunk,
 			verifyHash: false,
 			removeChunksWithGreaterNumbers: false,
