@@ -361,6 +361,14 @@ public class TFChunkManager : IThreadPoolWorkItem {
 		return newChunk;
 	}
 
+	// switch permanent chunk works by acquiring the lock, and while we hold it
+	//   we switch in the new chunk, and switch out the many that it might be replacing.
+
+	// however, now we want to switch in multiple chunks
+	private async ValueTask<TFChunk.TFChunk> SwitchInRemoteChunks() {
+
+	}
+
 	private bool ReplaceChunksWith(TFChunk.TFChunk newChunk, string chunkExplanation) {
 		Debug.Assert(_chunksLocker.IsLockHeld);
 

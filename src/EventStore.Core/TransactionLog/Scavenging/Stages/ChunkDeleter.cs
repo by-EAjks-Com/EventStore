@@ -130,6 +130,59 @@ public class ChunkDeleter<TStreamId, TRecord> : IChunkDeleter<TStreamId, TRecord
 		// todo: actually delete the file in cooperation with the chunk manager
 		// so that readers are allowed to complete and chunk manager knows that
 		// the chunk has gone and must direct readers to the archive
+
+
+		// the normal switch routine is that we have just finished writing a new chunk
+		// (e.g. scavenged) and we want to swap it in.
+		// 1. complete the chunk temp
+		// 2. call manager.switch to switch that chunk in
+		//     - disposes the chunk that we are switching in
+		//     - renames it
+		//     - re-instantiates it (TFChunk.FromCompletedFile)
+		//     - acquires the chunks locker
+		//         - puts it in the _chunks array, removing and marking for deletion any chunks that it replaces
+		//              (if this fails then mark the new chunk for deletion)
+
+		// when we are switching in a remote chunk it's slightly different
+		// here we haven't finished writing a chunk at all, the chunk we want to swap in is remote.
+		// call manager.switch
+		//     - disposes the chunk that we are switching in
+		//     - renames it
+		//     - re-instantiates it (TFChunk.FromCompletedFile)
+		//     - acquires the chunks locker
+		//         - puts it in the _chunks array, removing and marking for deletion any chunks that it replaces
+		//              (if this fails then mark the new chunk for deletion)
+
+		// we DO NOT DELETE THE CHUNK, we just switch in the remote one
+		// and the manager will deal with deleting the ones that it replaced.
+		// if it doesn't get deleted now because we shutdown before the readers finish, it can be deleted
+		// next time we scavenge.
+
+		// it used to be that we swap in ONE chunk that can replace MANY
+		// but here we swap in MANY chunks that can replace one.
+
+		// TANGENTIAL TOPIC: CHUNK CONSISTENCY
+		//qqqq something we need to be careful about is making sure that we read the posmap and
+		// read the resulting address from the same physical chunk even if it is remote.
+		// a property of local chunks is that the underlying file is immutable/appendonly for the lifetime of the chunk
+		// BUT the remote ones, if we aren't careful, could switch remote blob without reinstantiating the chunk.
+		//    there are two cases here
+		//    1. on the archiver node where we are the one replacing the old chunk
+		//            (maybe this is the same as 2)
+		//    2. on other nodes where the old remote chunk just changes.
+
+		//for (var logicalChunkNumber = physicalChunk.ChunkStartNumber;
+		//	logicalChunkNumber <= physicalChunk.ChunkEndNumber;
+		//	logicalChunkNumber++) {
+
+		//	//qq who should take responsibility for this?
+		//	var locator = archiveNameResolver.ResolveName(logicalChunkNumber);
+
+		//	//qqqq we might need to switch them all in at the same time?
+		//	await manager.SwitchChunk(physicalChunk.ChunkStartNumber, ct);
+		//}
+
+		//physicalChunk.fil
 		_logger.Debug(
 			"SCAVENGING: Deleting physical chunk: {oldChunkName} " +
 			"{chunkStartNumber} => {chunkEndNumber} ({chunkStartPosition} => {chunkEndPosition})",

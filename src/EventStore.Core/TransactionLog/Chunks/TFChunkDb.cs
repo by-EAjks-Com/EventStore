@@ -171,6 +171,8 @@ public sealed class TFChunkDb : IAsyncDisposable {
 				await Manager.AddNewChunk(token);
 		} else {
 			var chunkFileName = lastChunkVersions[0];
+			//qq possibly reading the header of a remote chunk here i think. we should check the other calls
+			// for ReadHeader and ReadFooter. Maybe they should log warnings rather than throw exceptions
 			var chunkHeader = await Manager.FileSystem.ReadHeaderAsync(chunkFileName, token);
 			var chunkLocalPos = chunkHeader.GetLocalLogPosition(writerCheckpoint);
 			if (chunkHeader.IsScavenged) {
